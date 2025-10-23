@@ -1,0 +1,130 @@
+{
+  "info": {
+    "name": "Wallex API",
+    "description": "API examples for wallet management system",
+    "version": "1.0.0"
+  },
+  "baseUrl": "http://localhost:3000",
+  "examples": {
+    "1. Create First Wallet": {
+      "method": "POST",
+      "endpoint": "/wallets",
+      "body": {
+        "walletId": "alice-wallet",
+        "ownerId": "alice-001",
+        "initialBalance": 500
+      },
+      "curl": "curl -X POST http://localhost:3000/wallets -H 'Content-Type: application/json' -d '{\"walletId\":\"alice-wallet\",\"ownerId\":\"alice-001\",\"initialBalance\":500}'"
+    },
+    "2. Create Second Wallet": {
+      "method": "POST",
+      "endpoint": "/wallets",
+      "body": {
+        "walletId": "bob-wallet",
+        "ownerId": "bob-002",
+        "initialBalance": 300
+      },
+      "curl": "curl -X POST http://localhost:3000/wallets -H 'Content-Type: application/json' -d '{\"walletId\":\"bob-wallet\",\"ownerId\":\"bob-002\",\"initialBalance\":300}'"
+    },
+    "3. Transfer from Alice to Bob": {
+      "method": "POST",
+      "endpoint": "/wallets/alice-wallet/transfer",
+      "body": {
+        "toWalletId": "bob-wallet",
+        "amount": 100,
+        "description": "Payment for freelance work"
+      },
+      "curl": "curl -X POST http://localhost:3000/wallets/alice-wallet/transfer -H 'Content-Type: application/json' -d '{\"toWalletId\":\"bob-wallet\",\"amount\":100,\"description\":\"Payment for freelance work\"}'"
+    },
+    "4. Credit Wallet": {
+      "method": "POST",
+      "endpoint": "/wallets/alice-wallet/credit",
+      "body": {
+        "amount": 200,
+        "description": "Salary deposit"
+      },
+      "curl": "curl -X POST http://localhost:3000/wallets/alice-wallet/credit -H 'Content-Type: application/json' -d '{\"amount\":200,\"description\":\"Salary deposit\"}'"
+    },
+    "5. Debit Wallet": {
+      "method": "POST",
+      "endpoint": "/wallets/bob-wallet/debit",
+      "body": {
+        "amount": 50,
+        "description": "ATM withdrawal"
+      },
+      "curl": "curl -X POST http://localhost:3000/wallets/bob-wallet/debit -H 'Content-Type: application/json' -d '{\"amount\":50,\"description\":\"ATM withdrawal\"}'"
+    },
+    "6. Get Specific Wallet": {
+      "method": "GET",
+      "endpoint": "/wallets/alice-wallet",
+      "curl": "curl -X GET http://localhost:3000/wallets/alice-wallet"
+    },
+    "7. Get All Wallets": {
+      "method": "GET",
+      "endpoint": "/wallets",
+      "curl": "curl -X GET http://localhost:3000/wallets"
+    }
+  },
+  "testScenarios": {
+    "completeTransferFlow": {
+      "description": "Complete flow to test wallet-to-wallet transfer",
+      "steps": [
+        {
+          "step": 1,
+          "action": "Create source wallet (Alice)",
+          "command": "curl -X POST http://localhost:3000/wallets -H 'Content-Type: application/json' -d '{\"walletId\":\"alice-wallet\",\"ownerId\":\"alice-001\",\"initialBalance\":1000}'"
+        },
+        {
+          "step": 2,
+          "action": "Create destination wallet (Bob)",
+          "command": "curl -X POST http://localhost:3000/wallets -H 'Content-Type: application/json' -d '{\"walletId\":\"bob-wallet\",\"ownerId\":\"bob-002\",\"initialBalance\":500}'"
+        },
+        {
+          "step": 3,
+          "action": "Verify initial balances",
+          "commands": [
+            "curl -X GET http://localhost:3000/wallets/alice-wallet",
+            "curl -X GET http://localhost:3000/wallets/bob-wallet"
+          ],
+          "expectedResults": {
+            "alice": "balance: 1000",
+            "bob": "balance: 500"
+          }
+        },
+        {
+          "step": 4,
+          "action": "Transfer 250 from Alice to Bob",
+          "command": "curl -X POST http://localhost:3000/wallets/alice-wallet/transfer -H 'Content-Type: application/json' -d '{\"toWalletId\":\"bob-wallet\",\"amount\":250,\"description\":\"Payment for services\"}'",
+          "expectedResult": "Alice balance: 750, Bob balance: 750"
+        },
+        {
+          "step": 5,
+          "action": "Verify final balances",
+          "commands": [
+            "curl -X GET http://localhost:3000/wallets/alice-wallet",
+            "curl -X GET http://localhost:3000/wallets/bob-wallet"
+          ],
+          "expectedResults": {
+            "alice": "balance: 750",
+            "bob": "balance: 750"
+          }
+        }
+      ]
+    },
+    "errorScenarios": {
+      "insufficientFunds": {
+        "description": "Test transfer with insufficient funds",
+        "command": "curl -X POST http://localhost:3000/wallets/alice-wallet/transfer -H 'Content-Type: application/json' -d '{\"toWalletId\":\"bob-wallet\",\"amount\":10000,\"description\":\"Large transfer\"}'"
+      },
+      "nonExistentWallet": {
+        "description": "Test transfer to non-existent wallet",
+        "command": "curl -X POST http://localhost:3000/wallets/alice-wallet/transfer -H 'Content-Type: application/json' -d '{\"toWalletId\":\"nonexistent-wallet\",\"amount\":50,\"description\":\"Transfer to invalid wallet\"}'"
+      },
+      "sameWalletTransfer": {
+        "description": "Test transfer to same wallet (should fail)",
+        "command": "curl -X POST http://localhost:3000/wallets/alice-wallet/transfer -H 'Content-Type: application/json' -d '{\"toWalletId\":\"alice-wallet\",\"amount\":50,\"description\":\"Self transfer\"}'"
+      }
+    }
+  }
+}
+
