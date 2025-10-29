@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { KurrentDBClient } from '@kurrent/kurrentdb-client';
 import { Client, ClientOptions } from '@elastic/elasticsearch';
 import { CreateWalletHandler } from './application/commands/handlers/create-wallet.handler';
@@ -19,6 +20,11 @@ import { WalletController } from './interfaces/rest/wallet.controller';
 import { DistributedLockService } from './infrastructure/lock/distributed-lock.service';
 import { WalletSnapshotRepository } from './infrastructure/snapshots/wallet-snapshot.repository';
 import { WalletSnapshotService } from './infrastructure/snapshots/wallet-snapshot.service';
+import { WalletEntity } from './domain/entities/wallet.entity';
+import { HoldEntity } from './domain/entities/hold.entity';
+import { WalletRepository } from './infrastructure/persistence/wallet.repository';
+import { HoldRepository } from './infrastructure/persistence/hold.repository';
+import { LedgerModule } from '../ledger/ledger.module';
 
 const commandHandlers = [
   CreateWalletHandler,
@@ -29,7 +35,11 @@ const commandHandlers = [
 const queryHandlers = [GetWalletHandler, GetWalletsHandler];
 
 @Module({
-  imports: [CqrsModule],
+  imports: [
+    CqrsModule,
+    TypeOrmModule.forFeature([WalletEntity, HoldEntity]),
+    LedgerModule,
+  ],
   controllers: [WalletController],
   providers: [
     {
@@ -65,9 +75,11 @@ const queryHandlers = [GetWalletHandler, GetWalletsHandler];
     DistributedLockService,
     WalletSnapshotRepository,
     WalletSnapshotService,
+    WalletRepository,
+    HoldRepository,
     ...commandHandlers,
     ...queryHandlers,
   ],
-  exports: [WalletReadRepository],
+  exports: [WalletReadRepository, WalletRepository, HoldRepository],
 })
 export class WalletModule {}
