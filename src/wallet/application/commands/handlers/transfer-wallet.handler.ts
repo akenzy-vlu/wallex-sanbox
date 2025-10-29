@@ -1,14 +1,13 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
 import { EventStoreDbService } from '../../../infrastructure/event-store/event-store.service';
-import { WalletProjectionService } from '../../../infrastructure/projections/wallet-projection.service';
 import { WalletAggregate } from '../../../domain/wallet.aggregate';
 import { WalletNotFoundError } from '../../../domain/errors';
 import { TransferWalletCommand } from '../transfer-wallet.command';
 import { DistributedLockService } from '../../../infrastructure/lock/distributed-lock.service';
 import { WalletSnapshotService } from '../../../infrastructure/snapshots/wallet-snapshot.service';
 import { WalletRepository } from '../../../infrastructure/persistence/wallet.repository';
-import { LedgerProjectionService } from '../../../../ledger/application/ledger-projection.service';
+import { OutboxService } from '../../../infrastructure/outbox/outbox.service';
 
 export interface TransferResult {
   fromWallet: ReturnType<WalletAggregate['snapshot']>;
@@ -23,11 +22,10 @@ export class TransferWalletHandler
 
   constructor(
     private readonly eventStore: EventStoreDbService,
-    private readonly projection: WalletProjectionService,
     private readonly lockService: DistributedLockService,
     private readonly snapshotService: WalletSnapshotService,
     private readonly walletRepository: WalletRepository,
-    private readonly ledgerProjection: LedgerProjectionService,
+    private readonly outboxService: OutboxService,
   ) {}
 
   async execute(command: TransferWalletCommand): Promise<TransferResult> {
@@ -96,48 +94,64 @@ export class TransferWalletHandler
             );
 
             try {
-              // Execute transfer in persistence layer (PostgreSQL) with transaction
+              // Execute transfer in write-side persistence (non-critical)
               await this.walletRepository.transfer(
                 fromWalletId,
                 toWalletId,
                 amount,
               );
               this.logger.log(
-                `Transfer completed in persistence layer: ${amount} from ${fromWalletId} to ${toWalletId}`,
+                `Transfer completed in write-side persistence: ${amount} from ${fromWalletId} to ${toWalletId}`,
               );
-
-              // Project both sets of events
-              const allEvents = [...fromCommittedEvents, ...toCommittedEvents];
-              await this.projection.project(allEvents);
-
-              // Project events to ledger
-              await this.ledgerProjection.project(allEvents);
-
-              // Mark events as committed
-              fromAggregate.markEventsCommitted();
-              toAggregate.markEventsCommitted();
-
-              // Create snapshots if needed
-              await this.snapshotService.createSnapshotIfNeeded(
-                fromAggregate,
-                fromEventCount + fromCommittedEvents.length,
-              );
-              await this.snapshotService.createSnapshotIfNeeded(
-                toAggregate,
-                toEventCount + toCommittedEvents.length,
-              );
-
-              return {
-                fromWallet: fromAggregate.snapshot(),
-                toWallet: toAggregate.snapshot(),
-              };
             } catch (error) {
               this.logger.error(
-                `Failed to persist transfer from ${fromWalletId} to ${toWalletId}: ${error.message}`,
-                error.stack,
+                `Failed to persist transfer to write-side (non-critical): ${error.message}`,
               );
-              throw error;
             }
+
+            try {
+              // Enqueue events for both wallets to outbox for async projection
+              await Promise.all([
+                this.outboxService.enqueue(fromCommittedEvents, {
+                  aggregateId: fromWalletId,
+                }),
+                this.outboxService.enqueue(toCommittedEvents, {
+                  aggregateId: toWalletId,
+                }),
+              ]);
+              this.logger.log(
+                `Events enqueued to outbox for transfer from ${fromWalletId} to ${toWalletId}`,
+              );
+            } catch (error) {
+              this.logger.error(
+                `Failed to enqueue transfer events to outbox: ${error.message}`,
+              );
+            }
+
+            // Mark events as committed
+            fromAggregate.markEventsCommitted();
+            toAggregate.markEventsCommitted();
+
+            // Create snapshots if needed
+            await Promise.all([
+              this.snapshotService.createSnapshotIfNeeded(
+                fromAggregate,
+                fromEventCount + fromCommittedEvents.length,
+              ),
+              this.snapshotService.createSnapshotIfNeeded(
+                toAggregate,
+                toEventCount + toCommittedEvents.length,
+              ),
+            ]);
+
+            this.logger.log(
+              `Transfer completed successfully: ${amount} from ${fromWalletId} to ${toWalletId}`,
+            );
+
+            return {
+              fromWallet: fromAggregate.snapshot(),
+              toWallet: toAggregate.snapshot(),
+            };
           },
         );
       },

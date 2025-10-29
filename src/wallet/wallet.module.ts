@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ConfigModule } from '@nestjs/config';
 import { KurrentDBClient } from '@kurrent/kurrentdb-client';
 import { Client, ClientOptions } from '@elastic/elasticsearch';
 import { CreateWalletHandler } from './application/commands/handlers/create-wallet.handler';
@@ -26,6 +28,28 @@ import { WalletRepository } from './infrastructure/persistence/wallet.repository
 import { HoldRepository } from './infrastructure/persistence/hold.repository';
 import { LedgerModule } from '../ledger/ledger.module';
 
+// New async projection infrastructure
+import { OutboxEvent } from './infrastructure/outbox/outbox.entity';
+import { OutboxService } from './infrastructure/outbox/outbox.service';
+import { IdempotencyKey } from './infrastructure/idempotency/idempotency.entity';
+import { IdempotencyService } from './infrastructure/idempotency/idempotency.service';
+import { ProjectorCheckpoint } from './infrastructure/projections/projector-checkpoint.entity';
+import { ReadModelProjector } from './infrastructure/projections/read-model.projector';
+import { LedgerProjector } from './infrastructure/projections/ledger.projector';
+import { ProjectorBootstrapService } from './infrastructure/projections/projector-bootstrap.service';
+import { RecoveryService } from './infrastructure/recovery/recovery.service';
+import { MetricsService } from './infrastructure/observability/metrics.service';
+import { TracingService } from './infrastructure/observability/tracing.service';
+import { Wallet } from './infrastructure/read-model/wallet.entity';
+import { LedgerEntryEntity } from '../ledger/domain/entities/ledger-entry.entity';
+
+// Kafka integration
+import { KafkaModule } from '../kafka/kafka.module';
+import { IntegrationModule } from '../integration/integration.module';
+import { KafkaOutboxPublisherService } from '../kafka/kafka-outbox-publisher.service';
+import { LedgerKafkaConsumer } from './infrastructure/projections/ledger-kafka.consumer';
+import { ReadModelKafkaConsumer } from './infrastructure/projections/read-model-kafka.consumer';
+
 const commandHandlers = [
   CreateWalletHandler,
   CreditWalletHandler,
@@ -37,8 +61,20 @@ const queryHandlers = [GetWalletHandler, GetWalletsHandler];
 @Module({
   imports: [
     CqrsModule,
-    TypeOrmModule.forFeature([WalletEntity, HoldEntity]),
+    ConfigModule,
+    ScheduleModule.forRoot(),
+    TypeOrmModule.forFeature([
+      WalletEntity,
+      HoldEntity,
+      OutboxEvent,
+      IdempotencyKey,
+      ProjectorCheckpoint,
+      Wallet,
+      LedgerEntryEntity,
+    ]),
     LedgerModule,
+    KafkaModule, // Import Kafka module
+    IntegrationModule,
   ],
   controllers: [WalletController],
   providers: [
@@ -77,9 +113,32 @@ const queryHandlers = [GetWalletHandler, GetWalletsHandler];
     WalletSnapshotService,
     WalletRepository,
     HoldRepository,
+    // New async projection infrastructure
+    OutboxService,
+    IdempotencyService,
+    // Kafka-based projectors (replacing polling-based projectors)
+    KafkaOutboxPublisherService,
+    LedgerKafkaConsumer,
+    ReadModelKafkaConsumer,
+    // Keep old projectors for migration/fallback
+    ReadModelProjector,
+    LedgerProjector,
+    ProjectorBootstrapService,
+    RecoveryService,
+    // Observability
+    MetricsService,
+    TracingService,
     ...commandHandlers,
     ...queryHandlers,
   ],
-  exports: [WalletReadRepository, WalletRepository, HoldRepository],
+  exports: [
+    WalletReadRepository,
+    WalletRepository,
+    HoldRepository,
+    OutboxService,
+    IdempotencyService,
+    MetricsService,
+    TracingService,
+  ],
 })
 export class WalletModule {}

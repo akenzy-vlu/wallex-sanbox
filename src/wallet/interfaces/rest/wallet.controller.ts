@@ -7,6 +7,9 @@ import {
   NotFoundException,
   Param,
   Post,
+  Headers,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import {
@@ -35,7 +38,12 @@ export class WalletController {
   ) {}
 
   @Post()
-  async createWallet(@Body() dto: CreateWalletDto): Promise<WalletReadModel> {
+  @HttpCode(HttpStatus.CREATED)
+  async createWallet(
+    @Body() dto: CreateWalletDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('x-correlation-id') correlationId?: string,
+  ): Promise<any> {
     if (!dto.walletId || !dto.ownerId) {
       throw new BadRequestException('walletId and ownerId are required');
     }
@@ -43,61 +51,93 @@ export class WalletController {
     const initialBalance = dto.initialBalance ?? 0;
 
     try {
-      await this.commandBus.execute(
-        new CreateWalletCommand(dto.walletId, dto.ownerId, initialBalance),
+      // Execute command with idempotency support
+      const snapshot = await this.commandBus.execute(
+        new CreateWalletCommand(
+          dto.walletId,
+          dto.ownerId,
+          initialBalance,
+          idempotencyKey,
+          correlationId,
+        ),
       );
+
+      // Return snapshot directly (read-after-write from aggregate)
+      // This guarantees consistency without waiting for projections
+      return {
+        id: snapshot.id,
+        ownerId: snapshot.ownerId,
+        balance: snapshot.balance,
+        version: snapshot.version,
+        createdAt: snapshot.createdAt,
+        updatedAt: snapshot.updatedAt,
+      };
     } catch (error) {
       this.handleError(error);
     }
-
-    return this.fetchWalletOrThrow(dto.walletId);
   }
 
   @Post(':walletId/credit')
   async creditWallet(
     @Param('walletId') walletId: string,
     @Body() dto: MutateWalletBalanceDto,
-  ): Promise<WalletReadModel> {
+  ): Promise<any> {
     if (!walletId) {
       throw new BadRequestException('walletId is required');
     }
 
     try {
-      await this.commandBus.execute(
+      const snapshot = await this.commandBus.execute(
         new CreditWalletCommand(walletId, dto.amount, dto.description),
       );
+
+      // Return snapshot directly (read-after-write from aggregate)
+      return {
+        id: snapshot.id,
+        ownerId: snapshot.ownerId,
+        balance: snapshot.balance,
+        version: snapshot.version,
+        createdAt: snapshot.createdAt,
+        updatedAt: snapshot.updatedAt,
+      };
     } catch (error) {
       this.handleError(error);
     }
-
-    return this.fetchWalletOrThrow(walletId);
   }
 
   @Post(':walletId/debit')
   async debitWallet(
     @Param('walletId') walletId: string,
     @Body() dto: MutateWalletBalanceDto,
-  ): Promise<WalletReadModel> {
+  ): Promise<any> {
     if (!walletId) {
       throw new BadRequestException('walletId is required');
     }
 
     try {
-      await this.commandBus.execute(
+      const snapshot = await this.commandBus.execute(
         new DebitWalletCommand(walletId, dto.amount, dto.description),
       );
+
+      // Return snapshot directly (read-after-write from aggregate)
+      return {
+        id: snapshot.id,
+        ownerId: snapshot.ownerId,
+        balance: snapshot.balance,
+        version: snapshot.version,
+        createdAt: snapshot.createdAt,
+        updatedAt: snapshot.updatedAt,
+      };
     } catch (error) {
       this.handleError(error);
     }
-
-    return this.fetchWalletOrThrow(walletId);
   }
 
   @Post(':fromWalletId/transfer')
   async transferWallet(
     @Param('fromWalletId') fromWalletId: string,
     @Body() dto: TransferWalletDto,
-  ): Promise<{ fromWallet: WalletReadModel; toWallet: WalletReadModel }> {
+  ): Promise<any> {
     if (!fromWalletId) {
       throw new BadRequestException('fromWalletId is required');
     }
@@ -107,7 +147,7 @@ export class WalletController {
     }
 
     try {
-      await this.commandBus.execute(
+      const result = await this.commandBus.execute(
         new TransferWalletCommand(
           fromWalletId,
           dto.toWalletId,
@@ -115,14 +155,29 @@ export class WalletController {
           dto.description,
         ),
       );
+
+      // Return snapshots directly (read-after-write from aggregates)
+      return {
+        fromWallet: {
+          id: result.fromWallet.id,
+          ownerId: result.fromWallet.ownerId,
+          balance: result.fromWallet.balance,
+          version: result.fromWallet.version,
+          createdAt: result.fromWallet.createdAt,
+          updatedAt: result.fromWallet.updatedAt,
+        },
+        toWallet: {
+          id: result.toWallet.id,
+          ownerId: result.toWallet.ownerId,
+          balance: result.toWallet.balance,
+          version: result.toWallet.version,
+          createdAt: result.toWallet.createdAt,
+          updatedAt: result.toWallet.updatedAt,
+        },
+      };
     } catch (error) {
       this.handleError(error);
     }
-
-    const fromWallet = await this.fetchWalletOrThrow(fromWalletId);
-    const toWallet = await this.fetchWalletOrThrow(dto.toWalletId);
-
-    return { fromWallet, toWallet };
   }
 
   @Get()

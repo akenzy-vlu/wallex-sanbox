@@ -28,6 +28,10 @@ export class WalletRepository {
     private readonly dataSource: DataSource,
   ) {}
 
+  async findAll(): Promise<WalletEntity[]> {
+    return this.repository.find();
+  }
+
   /**
    * Create a new wallet
    */

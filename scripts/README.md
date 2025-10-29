@@ -1,325 +1,336 @@
-# Load Testing Scripts
+# Wallet Load Testing Scripts
 
-This directory contains scripts for load testing the wallet API, specifically for testing credit and debit operations under high load.
+Python scripts to create multiple wallets and perform random credit, debit, and transfer operations for testing the wallet system.
 
-## Scripts Overview
+## Setup
 
-### 1. `setup-test-wallet.sh`
-Creates a test wallet with a high initial balance for load testing.
+### 1. Install Python Dependencies
 
-**Usage:**
-```bash
-./setup-test-wallet.sh [walletId] [initialBalance] [ownerId]
-```
-
-**Example:**
-```bash
-./setup-test-wallet.sh test-wallet 100000 test-user
-```
-
-### 2. `spam-credit.sh`
-Sends multiple credit requests to a wallet in parallel.
-
-**Usage:**
-```bash
-./spam-credit.sh <walletId> <numberOfRequests> [amount] [baseUrl]
-```
-
-**Example:**
-```bash
-./spam-credit.sh test-wallet 1000 10
-```
-
-This will send 1000 credit requests, each adding 10 to the wallet balance.
-
-### 3. `spam-debit.sh`
-Sends multiple debit requests to a wallet in parallel.
-
-**Usage:**
-```bash
-./spam-debit.sh <walletId> <numberOfRequests> [amount] [baseUrl]
-```
-
-**Example:**
-```bash
-./spam-debit.sh test-wallet 1000 5
-```
-
-This will send 1000 debit requests, each subtracting 5 from the wallet balance.
-
-### 4. `mixed-load-test.sh`
-Runs a mixed load test with both credit and debit operations.
-
-**Usage:**
-```bash
-./mixed-load-test.sh <walletId> <numberOfRequests> [creditAmount] [debitAmount] [baseUrl]
-```
-
-**Example:**
-```bash
-./mixed-load-test.sh test-wallet 1000 20 10
-```
-
-This alternates between credit and debit operations.
-
-### 5. `load-test.js` (Advanced)
-Node.js-based load testing script with detailed statistics and better control.
-
-**Usage:**
-```bash
-node load-test.js [options]
-```
-
-**Options:**
-- `--wallet <id>` - Wallet ID to test (default: test-wallet)
-- `--requests <number>` - Total number of requests (default: 1000)
-- `--concurrent <number>` - Concurrent requests (default: 50)
-- `--credit <amount>` - Credit amount per request (default: 20)
-- `--debit <amount>` - Debit amount per request (default: 10)
-- `--type <credit|debit|mixed>` - Type of test (default: mixed)
-- `--url <url>` - Base URL (default: http://localhost:3000)
-
-**Examples:**
-```bash
-# Run 1000 mixed requests
-node load-test.js --wallet test-wallet --requests 1000 --type mixed
-
-# Run 5000 credit-only requests with 100 concurrent
-node load-test.js --wallet test-wallet --requests 5000 --type credit --concurrent 100
-
-# Run 2000 debit-only requests
-node load-test.js --wallet test-wallet --requests 2000 --type debit --debit 5
-```
-
-## Quick Start
-
-### Setup
-1. Make scripts executable:
-```bash
-chmod +x scripts/*.sh
-```
-
-2. Ensure your application is running:
-```bash
-yarn start:dev
-```
-
-3. Ensure infrastructure is running:
-```bash
-docker-compose up -d
-```
-
-### Run Complete Test
-
-**1. Create test wallet:**
 ```bash
 cd scripts
-./setup-test-wallet.sh my-test-wallet 100000
+pip install -r requirements.txt
 ```
 
-**2. Run credit spam test:**
+Or using pip3:
 ```bash
-./spam-credit.sh my-test-wallet 1000 10
+pip3 install -r requirements.txt
 ```
 
-**3. Run debit spam test:**
+### 2. Ensure Application is Running
+
+Make sure the wallet application is running:
 ```bash
-./spam-debit.sh my-test-wallet 1000 5
+pm2 status wallex
 ```
 
-**4. Run mixed load test:**
+If not running:
 ```bash
-./mixed-load-test.sh my-test-wallet 1000 20 10
+pm2 start dist/src/main.js --name wallex
 ```
 
-**5. Or use the advanced Node.js script:**
+## Available Scripts
+
+### 1. `quick_load_test.py` - Fast and Configurable (RECOMMENDED)
+
+Quick load testing with configurable parameters and optional parallel execution.
+
+#### Basic Usage
+
 ```bash
-node load-test.js --wallet my-test-wallet --requests 1000 --concurrent 50 --type mixed
+# Create 100 wallets and perform 200 operations (sequential)
+python quick_load_test.py
+
+# Custom configuration
+python quick_load_test.py --wallets 50 --operations 100
+
+# Fast mode with parallel execution
+python quick_load_test.py --wallets 100 --operations 500 --fast
+
+# Fast mode with custom worker count
+python quick_load_test.py --wallets 200 --operations 1000 --fast --workers 20
 ```
 
-## Test Scenarios
+#### Options
 
-### Scenario 1: Basic Load Test (1000 requests)
+- `--wallets`: Number of wallets to create (default: 100)
+- `--operations`: Number of random operations to perform (default: 200)
+- `--fast`: Enable parallel execution for faster testing
+- `--workers`: Number of parallel workers (default: 10, only with --fast)
+
+#### Examples
+
 ```bash
-./setup-test-wallet.sh load-test-1 50000
-node load-test.js --wallet load-test-1 --requests 1000 --type mixed
+# Small test (quick)
+python quick_load_test.py --wallets 10 --operations 20
+
+# Medium test
+python quick_load_test.py --wallets 100 --operations 200 --fast
+
+# Large test
+python quick_load_test.py --wallets 500 --operations 2000 --fast --workers 20
+
+# Stress test
+python quick_load_test.py --wallets 1000 --operations 5000 --fast --workers 30
 ```
 
-### Scenario 2: High Concurrency Test
+### 2. `load_test_wallets.py` - Detailed with Progress Bars
+
+Comprehensive load testing with detailed progress bars and verification.
+
+#### Usage
+
 ```bash
-./setup-test-wallet.sh load-test-2 100000
-node load-test.js --wallet load-test-2 --requests 5000 --concurrent 200 --type mixed
+python load_test_wallets.py
 ```
 
-### Scenario 3: Credit-Only Stress Test
+This script:
+- Creates 100 wallets with random initial balances (100-10,000)
+- Waits for async processing
+- Performs 200 random operations:
+  - Credits (10-1,000 random amount)
+  - Debits (10-500, max 50% of balance)
+  - Transfers (10-300, max 30% of balance)
+- Verifies ledger entries for sample wallets
+- Shows detailed statistics
+
+#### Configuration
+
+Edit the script to change defaults:
+```python
+NUM_WALLETS = 100       # Number of wallets
+NUM_OPERATIONS = 200    # Number of operations
+SLEEP_BETWEEN_OPS = 0.1 # Delay between ops (seconds)
+```
+
+## Output Examples
+
+### Quick Load Test Output
+
+```
+======================================================================
+🚀 Quick Wallet Load Test
+======================================================================
+
+⚙️  Configuration:
+   Wallets: 100
+   Operations: 200
+   Mode: Parallel
+   Workers: 10
+
+📝 Creating 100 wallets...
+   Progress: 100/100 (98 ✓, 2 ✗)
+✅ Created 98 wallets in 12.45s
+
+⏳ Waiting 5 seconds for async processing...
+
+🎲 Performing 200 random operations...
+   Progress: 200/200 (195 ✓)
+✅ Completed operations in 8.23s
+
+🔍 Checking ledger entries (sample)...
+   wallet-1761721...: 15 entries
+   wallet-1761722...: 8 entries
+   wallet-1761723...: 12 entries
+
+======================================================================
+📊 Final Statistics
+======================================================================
+
+💼 Wallets:
+   ✅ Success: 98
+   ❌ Failed:  2
+
+💰 Operations:
+   Credit:   67 ✓ / 1 ✗
+   Debit:    63 ✓ / 2 ✗
+   Transfer: 65 ✓ / 2 ✗
+
+   Total: 195 ✓ / 5 ✗
+
+⏱️  Total Duration: 20.68s
+   Operations/sec: 23.70
+
+======================================================================
+✅ Load test complete!
+======================================================================
+```
+
+## Verification
+
+### Check Application Logs
+
 ```bash
-./setup-test-wallet.sh load-test-3 0
-node load-test.js --wallet load-test-3 --requests 10000 --type credit --concurrent 100
+# Check for errors
+pm2 logs wallex --err
+
+# Check projector activity
+pm2 logs wallex | grep -E "(ledger-projector|read-model-projector)"
+
+# Check successful operations
+pm2 logs wallex | grep "Successfully processed"
 ```
 
-### Scenario 4: Debit Stress Test (Testing Insufficient Funds)
+### Check Database
+
+```sql
+-- Count wallets
+SELECT COUNT(*) FROM wallets;
+
+-- Count ledger entries
+SELECT COUNT(*) FROM ledger_entries;
+
+-- Count outbox events
+SELECT COUNT(*) FROM outbox;
+
+-- Check consumer processing
+SELECT 
+  consumer_name,
+  COUNT(*) as events_processed
+FROM outbox_consumer_processing
+GROUP BY consumer_name;
+```
+
+### API Verification
+
 ```bash
-./setup-test-wallet.sh load-test-4 1000
-node load-test.js --wallet load-test-4 --requests 5000 --type debit --debit 1 --concurrent 100
+# Get a wallet
+curl http://localhost:3000/wallets/wallet-1234567890
+
+# Get ledger entries
+curl http://localhost:3000/ledger/wallet/wallet-1234567890
+
+# Get all wallets (paginated)
+curl http://localhost:3000/wallets
 ```
-
-## Expected Results
-
-### Successful Test
-- All or most requests should succeed (200 OK)
-- Final balance should match expected calculation
-- No critical errors in the application logs
-- Events properly stored in KurrentDB
-- Read model updated in Elasticsearch
-
-### Performance Metrics
-The scripts will show:
-- **Success/Failure counts** - Track successful vs failed operations
-- **Response times** - Min, max, avg, median, p95, p99
-- **Requests per second** - Overall throughput
-- **Balance verification** - Compare expected vs actual balance changes
-- **Version tracking** - Number of events created
 
 ## Troubleshooting
 
+### Connection Refused
+
+```
+Error: Connection refused
+```
+
+**Solution**: Make sure the application is running:
+```bash
+pm2 restart wallex
+pm2 logs wallex
+```
+
+### Timeout Errors
+
+```
+Error: Timeout
+```
+
+**Solution**: Reduce parallel workers or add delays:
+```bash
+python quick_load_test.py --wallets 50 --operations 100 --workers 5
+```
+
+### Insufficient Funds
+
+```
+Error: Insufficient funds
+```
+
+This is expected for some debit/transfer operations. The scripts handle this gracefully.
+
 ### High Failure Rate
-- Check if the wallet has sufficient balance for debit operations
-- Verify the application is running and responding
-- Check system resources (CPU, memory, database connections)
-- Reduce concurrent requests with `--concurrent` option
 
-### Slow Performance
-- Check KurrentDB and Elasticsearch performance
-- Monitor database connection pool
-- Check network latency
-- Increase system resources
+If many operations are failing:
+1. Check application logs: `pm2 logs wallex --err`
+2. Verify database connection
+3. Check if projectors are running
+4. Reduce load: use fewer workers or slower execution
 
-### Balance Mismatch
-- May indicate concurrency issues or event projection delays
-- Check KurrentDB event stream for the wallet
-- Verify Elasticsearch projection is running
-- Check application logs for errors
+## Performance Tips
 
-## Monitoring During Tests
+### For Best Performance
 
-### 1. Check Application Logs
-```bash
-# Watch application output
-yarn start:dev
-```
+1. **Use fast mode** for creating many wallets:
+   ```bash
+   python quick_load_test.py --wallets 500 --fast --workers 20
+   ```
 
-### 2. Monitor KurrentDB
-```bash
-# Visit KurrentDB UI
-open http://localhost:2113
-```
+2. **Monitor system resources**:
+   ```bash
+   # CPU and memory
+   top
+   
+   # Database connections
+   SELECT count(*) FROM pg_stat_activity;
+   ```
 
-### 3. Check Elasticsearch
-```bash
-# Query wallet state
-curl http://localhost:9200/wallets/_search?pretty
+3. **Adjust workers** based on your system:
+   - CPU cores available: `nproc` or `sysctl -n hw.ncpu`
+   - Recommended: 10-20 workers for good balance
+   - High-end: 30-50 workers for stress testing
 
-# Get specific wallet
-curl http://localhost:9200/wallets/_doc/<wallet-id>?pretty
-```
-
-### 4. Monitor System Resources
-```bash
-# macOS
-top
-
-# or
-htop
-
-# Docker stats
-docker stats
-```
-
-## Notes
-
-- Scripts use `curl` for HTTP requests (bash scripts) or native Node.js http module
-- Bash scripts create concurrent requests using background processes (`&`)
-- The Node.js script provides better concurrency control and statistics
-- All scripts support custom base URLs for testing different environments
-- Response times are measured for performance analysis
-
-## Safety Considerations
-
-⚠️ **Warning**: These are load testing scripts that can generate high load on your system.
-
-- Start with small numbers (100-500 requests) and gradually increase
-- Monitor system resources during tests
-- Use dedicated test wallets, not production data
-- Ensure proper infrastructure resources (RAM, CPU, disk space)
-- KurrentDB and Elasticsearch should have adequate resources
+4. **Sequential for debugging**:
+   ```bash
+   python quick_load_test.py --wallets 10 --operations 20
+   ```
 
 ## Advanced Usage
 
-### Custom Base URL
-```bash
-# Test against different environment
-./spam-credit.sh test-wallet 1000 10 http://staging.example.com:3000
+### Custom Test Scenarios
+
+Edit `quick_load_test.py` to customize operation weights:
+
+```python
+# In perform_operation function, adjust probabilities
+operations = ["credit"] * 5 + ["debit"] * 3 + ["transfer"] * 2
+# This gives: 50% credit, 30% debit, 20% transfer
 ```
 
-### Chaining Tests
+### Continuous Load
+
+Run continuous load test:
+
 ```bash
-#!/bin/bash
-# Create and run complete test suite
-
-WALLET_ID="stress-test-wallet"
-
-./setup-test-wallet.sh $WALLET_ID 100000
-
-echo "Running credit test..."
-./spam-credit.sh $WALLET_ID 500 10
-
-echo "Running debit test..."
-./spam-debit.sh $WALLET_ID 500 5
-
-echo "Running mixed test..."
-./mixed-load-test.sh $WALLET_ID 1000 15 8
-
-echo "All tests completed!"
-```
-
-### Continuous Load Testing
-```bash
-# Run continuous tests in a loop
-for i in {1..10}; do
-  echo "=== Test Iteration $i ==="
-  node load-test.js --wallet test-wallet --requests 500 --type mixed
-  sleep 5
+while true; do
+  python quick_load_test.py --wallets 10 --operations 50 --fast
+  sleep 10
 done
 ```
 
-## Integration with CI/CD
+### Stress Test
 
-You can integrate these scripts into your CI/CD pipeline:
+Maximum stress test:
 
-```yaml
-# Example GitHub Actions workflow
-- name: Setup Test Environment
-  run: |
-    docker-compose up -d
-    yarn install
-    yarn start:dev &
-    
-- name: Wait for API
-  run: sleep 10
+```bash
+python quick_load_test.py \
+  --wallets 2000 \
+  --operations 10000 \
+  --fast \
+  --workers 50
+```
 
-- name: Run Load Tests
-  run: |
-    cd scripts
-    chmod +x *.sh
-    ./setup-test-wallet.sh ci-test-wallet 100000
-    node load-test.js --wallet ci-test-wallet --requests 1000
+## Cleanup
+
+After testing, you may want to clean up test data:
+
+```sql
+-- Delete test wallets (be careful!)
+DELETE FROM wallets WHERE id LIKE 'wallet-%';
+DELETE FROM ledger_entries WHERE wallet_id LIKE 'wallet-%';
+DELETE FROM outbox WHERE aggregate_id LIKE 'wallet-%';
+DELETE FROM outbox_consumer_processing WHERE outbox_event_id NOT IN (SELECT id FROM outbox);
+```
+
+Or use a safer approach - delete only old test data:
+
+```sql
+-- Delete wallets older than 1 hour
+DELETE FROM wallets 
+WHERE id LIKE 'wallet-%' 
+  AND created_at < NOW() - INTERVAL '1 hour';
 ```
 
 ## Support
 
-For issues or questions about load testing:
-1. Check application logs for errors
-2. Verify infrastructure is healthy (KurrentDB, Elasticsearch)
-3. Review [Main README](../README.md) for API documentation
-4. Check [Transfer API Guide](../TRANSFER_API_GUIDE.md) for additional info
-
+For issues or questions:
+1. Check application logs: `pm2 logs wallex`
+2. Review the troubleshooting guide: `LEDGER-TROUBLESHOOTING.md`
+3. Verify the ledger flow: `./verify-ledger-fix.sh`
