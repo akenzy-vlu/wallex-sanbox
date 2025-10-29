@@ -2,6 +2,10 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import { WalletEntity } from '../wallet/domain/entities/wallet.entity';
 import { HoldEntity } from '../wallet/domain/entities/hold.entity';
 import { LedgerEntryEntity } from '../ledger/domain/entities/ledger-entry.entity';
+import { OutboxEvent } from '../wallet/infrastructure/outbox/outbox.entity';
+import { IdempotencyKey } from '../wallet/infrastructure/idempotency/idempotency.entity';
+import { ProjectorCheckpoint } from '../wallet/infrastructure/projections/projector-checkpoint.entity';
+import { Wallet } from '../wallet/infrastructure/read-model/wallet.entity';
 
 /**
  * TypeORM DataSource configuration
@@ -14,7 +18,15 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
   database: process.env.DB_NAME || 'wallex',
-  entities: [WalletEntity, HoldEntity, LedgerEntryEntity],
+  entities: [
+    WalletEntity,
+    HoldEntity,
+    LedgerEntryEntity,
+    OutboxEvent,
+    IdempotencyKey,
+    ProjectorCheckpoint,
+    Wallet,
+  ],
   migrations: [__dirname + '/migrations/*.ts', __dirname + '/migrations/*.js'],
   synchronize: false,
   logging: process.env.DB_LOGGING === 'true',

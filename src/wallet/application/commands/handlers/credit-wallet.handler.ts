@@ -1,14 +1,13 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { Logger } from '@nestjs/common';
 import { EventStoreDbService } from '../../../infrastructure/event-store/event-store.service';
-import { WalletProjectionService } from '../../../infrastructure/projections/wallet-projection.service';
 import { WalletAggregate } from '../../../domain/wallet.aggregate';
 import { WalletNotFoundError } from '../../../domain/errors';
 import { CreditWalletCommand } from '../credit-wallet.command';
 import { DistributedLockService } from '../../../infrastructure/lock/distributed-lock.service';
 import { WalletSnapshotService } from '../../../infrastructure/snapshots/wallet-snapshot.service';
 import { WalletRepository } from '../../../infrastructure/persistence/wallet.repository';
-import { LedgerProjectionService } from '../../../../ledger/application/ledger-projection.service';
+import { OutboxService } from '../../../infrastructure/outbox/outbox.service';
 
 @CommandHandler(CreditWalletCommand)
 export class CreditWalletHandler
@@ -22,11 +21,10 @@ export class CreditWalletHandler
 
   constructor(
     private readonly eventStore: EventStoreDbService,
-    private readonly projection: WalletProjectionService,
     private readonly lockService: DistributedLockService,
     private readonly snapshotService: WalletSnapshotService,
     private readonly walletRepository: WalletRepository,
-    private readonly ledgerProjection: LedgerProjectionService,
+    private readonly outboxService: OutboxService,
   ) {}
 
   async execute(
@@ -62,34 +60,45 @@ export class CreditWalletHandler
         );
 
         try {
-          // Update persistence layer (PostgreSQL)
+          // Update write-side persistence (non-critical)
           await this.walletRepository.credit(command.walletId, command.amount);
           this.logger.log(
-            `Wallet ${command.walletId} credited ${command.amount} in persistence layer`,
+            `Wallet ${command.walletId} credited ${command.amount} in write-side persistence`,
           );
-
-          // Project events to read model
-          await this.projection.project(committedEvents);
-
-          // Project events to ledger
-          await this.ledgerProjection.project(committedEvents);
-
-          aggregate.markEventsCommitted();
-
-          // Create snapshot if needed
-          await this.snapshotService.createSnapshotIfNeeded(
-            aggregate,
-            eventCount + committedEvents.length,
-          );
-
-          return aggregate.snapshot();
         } catch (error) {
           this.logger.error(
-            `Failed to persist credit for wallet ${command.walletId}: ${error.message}`,
-            error.stack,
+            `Failed to persist credit to write-side (non-critical): ${error.message}`,
           );
-          throw error;
         }
+
+        try {
+          // Enqueue events to outbox for async projection
+          await this.outboxService.enqueue(committedEvents, {
+            aggregateId: command.walletId,
+          });
+          this.logger.log(
+            `Events enqueued to outbox for wallet ${command.walletId}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to enqueue events to outbox for wallet ${command.walletId}: ${error.message}`,
+          );
+        }
+
+        // Mark events as committed
+        aggregate.markEventsCommitted();
+
+        // Create snapshot if needed
+        await this.snapshotService.createSnapshotIfNeeded(
+          aggregate,
+          eventCount + committedEvents.length,
+        );
+
+        this.logger.log(
+          `Wallet ${command.walletId} credited ${command.amount} successfully`,
+        );
+
+        return aggregate.snapshot();
       },
     );
   }

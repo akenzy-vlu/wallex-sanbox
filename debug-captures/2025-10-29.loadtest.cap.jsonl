@@ -1,0 +1,2 @@
+{"timestamp": "2025-10-29T09:05:26.737292", "source": "loadtest", "type": "operation_error", "operation": "transfer", "error": "HTTPConnectionPool(host='localhost', port=3000): Read timed out. (read timeout=10)"}
+{"timestamp": "2025-10-29T09:05:35.237107", "source": "loadtest", "type": "operation_error", "operation": "debit", "error": "HTTPConnectionPool(host='localhost', port=3000): Read timed out. (read timeout=10)"}

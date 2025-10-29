@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { IntegrationService } from './application/integration.service';
 import { IntegrationController } from './interfaces/rest/integration.controller';
+import { DebugCaptureService } from './application/debug-capture.service';
 
 /**
  * IntegrationModule
@@ -21,7 +22,7 @@ import { IntegrationController } from './interfaces/rest/integration.controller'
 @Module({
   imports: [CqrsModule],
   controllers: [IntegrationController],
-  providers: [IntegrationService],
-  exports: [IntegrationService],
+  providers: [IntegrationService, DebugCaptureService],
+  exports: [IntegrationService, DebugCaptureService],
 })
 export class IntegrationModule {}
