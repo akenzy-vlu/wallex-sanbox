@@ -1,4 +1,5 @@
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
+import { Logger } from '@nestjs/common';
 import { EventStoreDbService } from '../../../infrastructure/event-store/event-store.service';
 import { WalletProjectionService } from '../../../infrastructure/projections/wallet-projection.service';
 import { WalletAggregate } from '../../../domain/wallet.aggregate';
@@ -6,6 +7,8 @@ import { WalletNotFoundError } from '../../../domain/errors';
 import { TransferWalletCommand } from '../transfer-wallet.command';
 import { DistributedLockService } from '../../../infrastructure/lock/distributed-lock.service';
 import { WalletSnapshotService } from '../../../infrastructure/snapshots/wallet-snapshot.service';
+import { WalletRepository } from '../../../infrastructure/persistence/wallet.repository';
+import { LedgerProjectionService } from '../../../../ledger/application/ledger-projection.service';
 
 export interface TransferResult {
   fromWallet: ReturnType<WalletAggregate['snapshot']>;
@@ -16,11 +19,15 @@ export interface TransferResult {
 export class TransferWalletHandler
   implements ICommandHandler<TransferWalletCommand, TransferResult>
 {
+  private readonly logger = new Logger(TransferWalletHandler.name);
+
   constructor(
     private readonly eventStore: EventStoreDbService,
     private readonly projection: WalletProjectionService,
     private readonly lockService: DistributedLockService,
     private readonly snapshotService: WalletSnapshotService,
+    private readonly walletRepository: WalletRepository,
+    private readonly ledgerProjection: LedgerProjectionService,
   ) {}
 
   async execute(command: TransferWalletCommand): Promise<TransferResult> {
@@ -88,30 +95,49 @@ export class TransferWalletHandler
               toAggregate.getPersistedVersion(),
             );
 
-            // Project both sets of events
-            await this.projection.project([
-              ...fromCommittedEvents,
-              ...toCommittedEvents,
-            ]);
+            try {
+              // Execute transfer in persistence layer (PostgreSQL) with transaction
+              await this.walletRepository.transfer(
+                fromWalletId,
+                toWalletId,
+                amount,
+              );
+              this.logger.log(
+                `Transfer completed in persistence layer: ${amount} from ${fromWalletId} to ${toWalletId}`,
+              );
 
-            // Mark events as committed
-            fromAggregate.markEventsCommitted();
-            toAggregate.markEventsCommitted();
+              // Project both sets of events
+              const allEvents = [...fromCommittedEvents, ...toCommittedEvents];
+              await this.projection.project(allEvents);
 
-            // Create snapshots if needed
-            await this.snapshotService.createSnapshotIfNeeded(
-              fromAggregate,
-              fromEventCount + fromCommittedEvents.length,
-            );
-            await this.snapshotService.createSnapshotIfNeeded(
-              toAggregate,
-              toEventCount + toCommittedEvents.length,
-            );
+              // Project events to ledger
+              await this.ledgerProjection.project(allEvents);
 
-            return {
-              fromWallet: fromAggregate.snapshot(),
-              toWallet: toAggregate.snapshot(),
-            };
+              // Mark events as committed
+              fromAggregate.markEventsCommitted();
+              toAggregate.markEventsCommitted();
+
+              // Create snapshots if needed
+              await this.snapshotService.createSnapshotIfNeeded(
+                fromAggregate,
+                fromEventCount + fromCommittedEvents.length,
+              );
+              await this.snapshotService.createSnapshotIfNeeded(
+                toAggregate,
+                toEventCount + toCommittedEvents.length,
+              );
+
+              return {
+                fromWallet: fromAggregate.snapshot(),
+                toWallet: toAggregate.snapshot(),
+              };
+            } catch (error) {
+              this.logger.error(
+                `Failed to persist transfer from ${fromWalletId} to ${toWalletId}: ${error.message}`,
+                error.stack,
+              );
+              throw error;
+            }
           },
         );
       },
